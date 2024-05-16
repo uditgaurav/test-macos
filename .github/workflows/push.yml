@@ -1,0 +1,15 @@
+name: Print Architecture
+
+on: [push, pull_request]
+
+jobs:
+  print-arch:
+    runs-on: macos-14
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v3
+
+    - name: Print architecture
+      run: |
+        echo "Architecture: $(uname -m)"
