@@ -1,0 +1,89 @@
+name: Test HCE CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      ACCOUNT_ID:
+        description: 'Account ID'
+        required: true
+      PROJECT_ID:
+        description: 'Project ID'
+        required: true
+      WORKFLOW_ID:
+        description: 'Workflow ID'
+        required: true
+      API_KEY:
+        description: 'API Key'
+        required: true
+      ORG_ID:
+        description: 'Organization ID'
+        default: 'default'
+        required: false
+      DELAY:
+        description: 'Delay for monitoring'
+        required: true
+      TIMEOUT:
+        description: 'Timeout for monitoring'
+        required: true
+      CLI_VERSION:
+        description: 'CLI Version'
+        default: '0.0.4'
+        required: false
+
+jobs:
+  test_cli:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Run Launch Experiment
+      id: launch_experiment
+      run: |
+        set -e
+        curl -sL https://app.harness.io/public/shared/tools/chaos/hce-cli/${{ github.event.inputs.CLI_VERSION }}/hce-cli-${{ github.event.inputs.CLI_VERSION }}-linux-amd64 -o hce-cli
+        chmod +x hce-cli
+
+        output=$(./hce-cli generate --api launch-experiment --account-id=${{ github.event.inputs.ACCOUNT_ID }} \
+        --project-id ${{ github.event.inputs.PROJECT_ID }} --workflow-id ${{ github.event.inputs.WORKFLOW_ID }} \
+        --api-key ${{ github.event.inputs.API_KEY }} --file-name hce-api.sh | jq -r '.data.runChaosExperiment.notifyID')
+
+        if [[ -z "$output" ]]; then
+          echo "Error: Failed to get notifyID"
+          exit 1
+        fi
+
+        echo "notifyID=$output" >> $GITHUB_ENV
+
+    - name: Run Monitor Experiment
+      run: |
+        set -e
+        curl -sL https://app.harness.io/public/shared/tools/chaos/hce-cli/${{ github.event.inputs.CLI_VERSION }}/hce-cli-${{ github.event.inputs.CLI_VERSION }}-linux-amd64 -o hce-cli
+        chmod +x hce-cli
+
+        output=$(./hce-cli generate --api monitor-experiment --account-id ${{ github.event.inputs.ACCOUNT_ID }} \
+        --org-id ${{ github.event.inputs.ORG_ID }} --project-id ${{ github.event.inputs.PROJECT_ID }} \
+        --api-key ${{ github.event.inputs.API_KEY }} --delay ${{ github.event.inputs.DELAY }} \
+        --timeout ${{ github.event.inputs.TIMEOUT }} --notify-id ${{ env.notifyID }})
+
+        if [[ -z "$output" ]]; then
+          echo "Error: Monitor Experiment returned empty value"
+          exit 1
+        fi
+
+    - name: Validate Resilience Score
+      run: |
+        set -e
+        curl -sL https://app.harness.io/public/shared/tools/chaos/hce-cli/${{ github.event.inputs.CLI_VERSION }}/hce-cli-${{ github.event.inputs.CLI_VERSION }}-linux-amd64 -o hce-cli
+        chmod +x hce-cli
+
+        resiliencyScore=$(./hce-cli generate --api validate-resilience-score --account-id=${{ github.event.inputs.ACCOUNT_ID }} \
+        --project-id ${{ github.event.inputs.PROJECT_ID }} --notify-id=${{ env.notifyID }} \
+        --api-key ${{ github.event.inputs.API_KEY }} --file-name hce-api.sh)
+
+        if [[ -z "$resiliencyScore" ]]; then
+          echo "Error: Validate Resilience Score returned empty value"
+          exit 1
+        fi
+
+        echo "${resiliencyScore}"
